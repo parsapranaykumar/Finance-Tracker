@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import { db } from './firebase'
+import { db, auth, provider } from './firebase'
+import {
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth'
 import {
   collection,
   addDoc,
@@ -18,7 +23,7 @@ const CATEGORIES = ["food", "housing", "utilities", "transport", "entertainment"
 const fmt = (n) =>
   n.toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
 
-// ── WhatsApp report builder ────────────────────────────────────────────────
+// ── WhatsApp report ────────────────────────────────────────────────────────
 function getDateRange(period) {
   const start = new Date();
   if (period === 'daily')   start.setHours(0, 0, 0, 0);
@@ -34,61 +39,107 @@ function buildWhatsAppMessage(period, transactions) {
   const expenses = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const balance  = income - expenses;
   const label    = period.charAt(0).toUpperCase() + period.slice(1);
-
   const breakdown = CATEGORIES
     .map(cat => ({ cat, total: filtered.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + t.amount, 0) }))
-    .filter(c => c.total > 0)
-    .sort((a, b) => b.total - a.total)
-    .map(c => `  • ${c.cat}: ₹${c.total.toFixed(2)}`)
-    .join('\n');
-
-  return `💰 *Finance Tracker – ${label} Report*
-📅 ${start.toLocaleDateString('en-IN')} → ${new Date().toLocaleDateString('en-IN')}
-
-✅ Income:   ₹${income.toFixed(2)}
-❌ Expenses: ₹${expenses.toFixed(2)}
-📊 Balance:  ₹${balance.toFixed(2)}
-
-🧾 *Expense Breakdown:*
-${breakdown || '  No expenses in this period.'}
-
-_Sent from Finance Tracker_`;
+    .filter(c => c.total > 0).sort((a, b) => b.total - a.total)
+    .map(c => `  • ${c.cat}: ₹${c.total.toFixed(2)}`).join('\n');
+  return `💰 *Finance Tracker – ${label} Report*\n📅 ${start.toLocaleDateString('en-IN')} → ${new Date().toLocaleDateString('en-IN')}\n\n✅ Income:   ₹${income.toFixed(2)}\n❌ Expenses: ₹${expenses.toFixed(2)}\n📊 Balance:  ₹${balance.toFixed(2)}\n\n🧾 *Expense Breakdown:*\n${breakdown || '  No expenses in this period.'}\n\n_Sent from Finance Tracker_`;
 }
 
-// ── App ────────────────────────────────────────────────────────────────────
+// ── Login Screen ───────────────────────────────────────────────────────────
+function LoginScreen({ onLogin, error }) {
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <h1>Finance Tracker</h1>
+        <p className="login-subtitle">Sign in to access your personal finance data</p>
+        {error && <p className="form-error" style={{ marginBottom: '12px' }}>{error}</p>}
+        <button className="google-btn" onClick={onLogin}>
+          <svg width="18" height="18" viewBox="0 0 18 18" style={{ marginRight: '10px', flexShrink: 0 }}>
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.348 2.825.957 4.039l3.007-2.332z"/>
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
+          </svg>
+          Sign in with Google
+        </button>
+        <p className="login-note">Your data is private — only you can see your transactions.</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────────────────────────
 function App() {
+  const [user,         setUser]         = useState(null);
+  const [authLoading,  setAuthLoading]  = useState(true);
+  const [authError,    setAuthError]    = useState("");
+
   const [transactions, setTransactions] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [fbError,  setFbError]  = useState("");
-  const [saving,   setSaving]   = useState(false);
+  const [loading,      setLoading]      = useState(true);
+  const [fbError,      setFbError]      = useState("");
+  const [saving,       setSaving]       = useState(false);
 
-  const [description, setDescription] = useState("");
-  const [amount,      setAmount]      = useState("");
-  const [type,        setType]        = useState("expense");
-  const [category,    setCategory]    = useState("food");
-
+  const [description,    setDescription]    = useState("");
+  const [amount,         setAmount]         = useState("");
+  const [type,           setType]           = useState("expense");
+  const [category,       setCategory]       = useState("food");
   const [filterType,     setFilterType]     = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [sortBy,         setSortBy]         = useState("date-desc");
   const [formError,      setFormError]      = useState("");
   const [editId,         setEditId]         = useState(null);
 
-  // ── Firestore real-time listener ─────────────────────────────────────────
+  // ── Auth state listener ───────────────────────────────────────────────────
   useEffect(() => {
-    const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q,
-      (snap) => {
-        setTransactions(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
-        setLoading(false);
-        setFbError("");
-      },
-      (err) => {
-        setFbError("⚠️ Firebase error: " + err.message);
-        setLoading(false);
-      }
-    );
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
     return () => unsub();
   }, []);
+
+  // ── Per-user Firestore listener ───────────────────────────────────────────
+  // KEY FIX: path is users/{uid}/transactions — completely isolated per user
+  useEffect(() => {
+  if (!user) {
+    // Use a microtask to avoid synchronous setState inside effect body
+    const timer = setTimeout(() => {
+      setTransactions([]);
+      setLoading(false);
+    }, 0);
+    return () => clearTimeout(timer);
+  }
+
+  const q = query(
+    collection(db, 'users', user.uid, 'transactions'),
+    orderBy('createdAt', 'desc')
+  );
+  const unsub = onSnapshot(q,
+    (snap) => {
+      setTransactions(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+      setLoading(false);
+      setFbError("");
+    },
+    (err) => {
+      setFbError("⚠️ Firebase error: " + err.message);
+      setLoading(false);
+    }
+  );
+  return () => unsub();
+}, [user]);
+
+  // ── Auth actions ──────────────────────────────────────────────────────────
+  const handleLogin = async () => {
+    setAuthError("");
+    try { await signInWithPopup(auth, provider); }
+    catch (err) { setAuthError("Sign-in failed: " + err.message); }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setTransactions([]);
+  };
 
   // ── Derived totals ────────────────────────────────────────────────────────
   const totalIncome   = transactions.filter(t => t.type === "income") .reduce((s, t) => s + t.amount, 0);
@@ -107,7 +158,10 @@ function App() {
     return 0;
   });
 
-  // ── Add / Update ──────────────────────────────────────────────────────────
+  // ── CRUD — all paths go under users/{uid}/transactions ───────────────────
+  const userCol = () => collection(db, 'users', user.uid, 'transactions');
+  const userDoc = (id) => doc(db, 'users', user.uid, 'transactions', id);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!description.trim()) { setFormError("Description is required."); return; }
@@ -117,12 +171,12 @@ function App() {
     setFormError(""); setSaving(true);
     try {
       if (editId) {
-        await updateDoc(doc(db, 'transactions', editId), {
+        await updateDoc(userDoc(editId), {
           description: description.trim(), amount: parseFloat(amount), type, category,
         });
         setEditId(null);
       } else {
-        await addDoc(collection(db, 'transactions'), {
+        await addDoc(userCol(), {
           description: description.trim(),
           amount:      parseFloat(amount),
           type, category,
@@ -145,7 +199,7 @@ function App() {
 
   const handleDelete = async (firestoreId) => {
     if (!window.confirm("Delete this transaction?")) return;
-    try { await deleteDoc(doc(db, 'transactions', firestoreId)); }
+    try { await deleteDoc(userDoc(firestoreId)); }
     catch (err) { alert("Delete failed: " + err.message); }
     if (editId === firestoreId) {
       setEditId(null); setDescription(""); setAmount(""); setType("expense"); setCategory("food");
@@ -158,8 +212,7 @@ function App() {
 
   // ── WhatsApp ──────────────────────────────────────────────────────────────
   const shareToWhatsApp = (period) => {
-    const msg = buildWhatsAppMessage(period, transactions);
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(buildWhatsAppMessage(period, transactions))}`, '_blank');
   };
 
   // ── Category breakdown ────────────────────────────────────────────────────
@@ -167,7 +220,15 @@ function App() {
     .map(cat => ({ cat, total: transactions.filter(t => t.type === "expense" && t.category === cat).reduce((s, t) => s + t.amount, 0) }))
     .filter(c => c.total > 0).sort((a, b) => b.total - a.total);
 
-  // ── JSX ───────────────────────────────────────────────────────────────────
+  // ── Render: loading / login / app ─────────────────────────────────────────
+  if (authLoading) {
+    return <div className="full-center"><p>Loading...</p></div>;
+  }
+
+  if (!user) {
+    return <LoginScreen onLogin={handleLogin} error={authError} />;
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -175,11 +236,18 @@ function App() {
           <h1>Finance Tracker</h1>
           <p className="subtitle">Track your income and expenses · Powered by Firebase</p>
         </div>
-        <div className="whatsapp-group">
-          <span className="wa-label">📲 Share:</span>
-          <button className="wa-btn" onClick={() => shareToWhatsApp('daily')}>Daily</button>
-          <button className="wa-btn" onClick={() => shareToWhatsApp('weekly')}>Weekly</button>
-          <button className="wa-btn" onClick={() => shareToWhatsApp('monthly')}>Monthly</button>
+        <div className="header-right">
+          <div className="whatsapp-group">
+            <span className="wa-label">📲 Share:</span>
+            <button className="wa-btn" onClick={() => shareToWhatsApp('daily')}>Daily</button>
+            <button className="wa-btn" onClick={() => shareToWhatsApp('weekly')}>Weekly</button>
+            <button className="wa-btn" onClick={() => shareToWhatsApp('monthly')}>Monthly</button>
+          </div>
+          <div className="user-info">
+            <img src={user.photoURL} alt={user.displayName} className="user-avatar" referrerPolicy="no-referrer" />
+            <span className="user-name">{user.displayName?.split(' ')[0]}</span>
+            <button className="logout-btn" onClick={handleLogout}>Sign out</button>
+          </div>
         </div>
       </header>
 
@@ -260,9 +328,9 @@ function App() {
         </div>
 
         {loading ? (
-          <div className="empty-state"><p>⏳ Loading from Firebase...</p></div>
+          <div className="empty-state"><p>⏳ Loading your transactions...</p></div>
         ) : filtered.length === 0 ? (
-          <div className="empty-state"><p>No transactions found for the selected filters.</p></div>
+          <div className="empty-state"><p>No transactions found. Add your first one above!</p></div>
         ) : (
           <table>
             <thead>

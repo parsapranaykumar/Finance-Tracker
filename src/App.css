@@ -22,9 +22,84 @@ body {
   min-height: 100vh;
 }
 
+/* ── Full center (auth loading) ───────────────────────────────────── */
+.full-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--muted);
+  font-family: Arial, sans-serif;
+}
+
+/* ── Login Screen ─────────────────────────────────────────────────── */
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0,0,0,.08);
+}
+
+.login-card h1 {
+  font-size: 26px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.login-subtitle {
+  color: var(--muted);
+  font-size: 14px;
+  font-family: Arial, sans-serif;
+  margin-bottom: 32px;
+  line-height: 1.5;
+}
+
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: Arial, sans-serif;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .2s, box-shadow .2s;
+  margin-bottom: 20px;
+}
+
+.google-btn:hover {
+  background: #f8fafc;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+}
+
+.login-note {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: Arial, sans-serif;
+  line-height: 1.5;
+}
+
 /* ── Layout ───────────────────────────────────────────────────────── */
 .app {
-  max-width: 860px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 32px 20px 60px;
 }
@@ -41,11 +116,7 @@ body {
   padding-bottom: 16px;
 }
 
-h1 {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
+h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
 
 .subtitle {
   color: var(--muted);
@@ -53,6 +124,48 @@ h1 {
   margin-top: 4px;
   font-family: Arial, sans-serif;
 }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* ── User Info ────────────────────────────────────────────────────── */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.user-name {
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.logout-btn {
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .15s;
+}
+.logout-btn:hover { background: #f1f5f9; color: var(--expense); }
 
 /* ── WhatsApp Share ───────────────────────────────────────────────── */
 .whatsapp-group {
@@ -80,7 +193,6 @@ h1 {
   font-weight: 600;
   transition: background .2s, transform .1s;
 }
-
 .wa-btn:hover  { background: #1ebe5d; }
 .wa-btn:active { transform: scale(0.97); }
 
@@ -228,7 +340,6 @@ form button[type="submit"]:disabled { background: #94a3b8; cursor: not-allowed; 
   font-size: 14px;
   font-family: Arial, sans-serif;
 }
-
 .cancel-btn:hover { background: #f1f5f9 !important; }
 
 .form-error {
@@ -327,6 +438,8 @@ tbody tr:hover { background: #f8fafc; }
 @media (max-width: 600px) {
   .summary { grid-template-columns: 1fr; }
   .app-header { flex-direction: column; align-items: flex-start; }
+  .header-right { flex-direction: column; align-items: flex-start; }
   form input, form select, form button { width: 100%; flex: unset; }
   .action-cell { flex-direction: column; }
+  .login-card { padding: 32px 24px; }
 }
